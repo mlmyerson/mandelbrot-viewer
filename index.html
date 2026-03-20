@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mandelbrot Viewer</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #ui { position: absolute; top: 10px; left: 10px; z-index: 10; }
+        button { padding: 10px 15px; margin-right: 10px; cursor: pointer; background: rgba(255,255,255,0.8); border: none; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #fff; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 20; }
+        .modal-content { background: #222; color: #fff; margin: 10% auto; padding: 20px; width: 80%; max-width: 500px; border-radius: 8px; position: relative; }
+        .close { position: absolute; right: 20px; top: 15px; font-size: 24px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas"></canvas>
+    <div id="ui">
+        <button id="btn-info">What is this?</button>
+        <button id="btn-settings">Settings</button>
+    </div>
+
+    <div id="info-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="close-info">&times;</span>
+            <h2>The Mandelbrot Set</h2>
+            <p>The Mandelbrot set is the set of complex numbers c for which the function f_c(z) = z^2 + c does not diverge when iterated from z = 0.</p>
+            <p><strong>Controls:</strong> Click and drag to pan. Use the mouse wheel or up/down arrow keys to zoom.</p>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="close-settings">&times;</span>
+            <h2>Settings</h2>
+            <label for="iterations">Max Iterations (Render Quality): <span id="iter-val">200</span></label><br>
+            <input type="range" id="iterations" min="50" max="2000" step="50" value="200" style="width:100%; margin-top: 10px;"><br><br>
+            <label for="color">Color Theme:</label>
+            <select id="color">
+                <option value="0">Classic</option>
+                <option value="1">Fire</option>
+            </select>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl');
+        
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const vsSource = `
+            attribute vec4 aVertexPosition;
+            void main() { gl_Position = aVertexPosition; }
+        `;
+
+        const fsSource = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform vec2 u_center;
+            uniform float u_zoom;
+            uniform int u_maxIterations;
+            uniform int u_colorTheme;
+
+            void main() {
+                vec2 uv = (gl_FragCoord.xy - u_resolution.xy / 2.0) / u_resolution.y;
+                vec2 c = u_center + uv * u_zoom;
+                vec2 z = vec2(0.0);
+                int iter = 0;
+                
+                for(int i = 0; i < 10000; i++) {
+                    if(i >= u_maxIterations) break;
+                    float x = (z.x * z.x - z.y * z.y) + c.x;
+                    float y = (z.y * z.x + z.x * z.y) + c.y;
+                    if((x * x + y * y) > 4.0) break;
+                    z.x = x; z.y = y;
+                    iter++;
+                }
+
+                if (iter == u_maxIterations) {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                } else {
+                    float t = float(iter) / float(u_maxIterations);
+                    if (u_colorTheme == 0) {
+                        gl_FragColor = vec4(sin(t*10.0), sin(t*15.0), sin(t*20.0), 1.0);
+                    } else {
+                        gl_FragColor = vec4(t*3.0, t*1.5, t*0.5, 1.0);
+                    }
+                }
+            }
+        `;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            return shader;
+        }
+
+        const shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, createShader(gl, gl.VERTEX_SHADER, vsSource));
+        gl.attachShader(shaderProgram, createShader(gl, gl.FRAGMENT_SHADER, fsSource));
+        gl.linkProgram(shaderProgram);
+        gl.useProgram(shaderProgram);
+
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+        
+        const positionLocation = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        const resLoc = gl.getUniformLocation(shaderProgram, "u_resolution");
+        const centerLoc = gl.getUniformLocation(shaderProgram, "u_center");
+        const zoomLoc = gl.getUniformLocation(shaderProgram, "u_zoom");
+        const iterLoc = gl.getUniformLocation(shaderProgram, "u_maxIterations");
+        const colorLoc = gl.getUniformLocation(shaderProgram, "u_colorTheme");
+
+        let centerX = -0.5, centerY = 0.0, zoom = 3.0, maxIter = 200, colorTheme = 0;
+
+        function draw() {
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.uniform2f(resLoc, canvas.width, canvas.height);
+            gl.uniform2f(centerLoc, centerX, centerY);
+            gl.uniform1f(zoomLoc, zoom);
+            gl.uniform1i(iterLoc, maxIter);
+            gl.uniform1i(colorLoc, colorTheme);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        draw();
+
+        // Interaction
+        let isDragging = false, lastX, lastY;
+        canvas.addEventListener('mousedown', e => { isDragging = true; lastX = e.clientX; lastY = e.clientY; });
+        canvas.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            centerX -= (e.clientX - lastX) * zoom / canvas.height;
+            centerY += (e.clientY - lastY) * zoom / canvas.height;
+            lastX = e.clientX; lastY = e.clientY;
+            draw();
+        });
+        canvas.addEventListener('wheel', e => {
+            zoom *= e.deltaY > 0 ? 1.1 : 0.9;
+            draw();
+        });
+        window.addEventListener('keydown', e => {
+            if(e.key === 'ArrowUp') zoom *= 0.9;
+            if(e.key === 'ArrowDown') zoom *= 1.1;
+            draw();
+        });
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight; draw();
+        });
+
+        // UI
+        document.getElementById('btn-info').onclick = () => document.getElementById('info-modal').style.display = 'block';
+        document.getElementById('close-info').onclick = () => document.getElementById('info-modal').style.display = 'none';
+        document.getElementById('btn-settings').onclick = () => document.getElementById('settings-modal').style.display = 'block';
+        document.getElementById('close-settings').onclick = () => document.getElementById('settings-modal').style.display = 'none';
+        
+        document.getElementById('iterations').oninput = (e) => {
+            maxIter = parseInt(e.target.value);
+            document.getElementById('iter-val').innerText = maxIter;
+            draw();
+        };
+        document.getElementById('color').onchange = (e) => {
+            colorTheme = parseInt(e.target.value);
+            draw();
+        };
+    </script>
+</body>
+</html>

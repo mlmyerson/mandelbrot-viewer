@@ -1,0 +1,31 @@
+{
+    "name": "Mandelbrot Viewer (C++)",
+    "image": "mcr.microsoft.com/devcontainers/cpp:1-ubuntu-24.04",
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": true,
+            "configureZshAsDefaultShell": true
+        }
+    },
+    "postCreateCommand": "bash .devcontainer/install-deps.sh",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cmake-tools",
+                "twxs.cmake",
+                "ms-vscode.cpptools-extension-pack"
+            ],
+            "settings": {
+                "cmake.buildDirectory": "${workspaceFolder}/build",
+                "cmake.configureSettings": {
+                    "CMAKE_BUILD_TYPE": "Release"
+                },
+                "editor.formatOnSave": true,
+                "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+            }
+        }
+    },
+    "forwardPorts": [],
+    "remoteUser": "vscode"
+}

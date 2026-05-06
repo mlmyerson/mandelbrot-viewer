@@ -1,0 +1,18 @@
+# CMake build directories
+build/
+cmake-build-*/
+
+# Compiled objects & binaries
+*.o
+*.a
+*.so
+*.out
+mandelbrot-viewer
+
+# VS Code / IDE
+.vscode/settings.json
+.vscode/c_cpp_properties.json
+compile_commands.json
+
+# macOS
+.DS_Store
